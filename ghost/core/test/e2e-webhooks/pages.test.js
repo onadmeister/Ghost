@@ -56,6 +56,17 @@ const buildPageSnapshotWithTiers = ({
     };
 };
 
+const buildPreviousPageSnapshotForDeletedPage = () => {
+    return {
+        id: anyObjectId,
+        uuid: anyUuid,
+        comment_id: anyObjectId,
+        created_at: anyISODateTime,
+        updated_at: anyISODateTime,
+        authors: new Array(1).fill(buildAuthorSnapshot(true))
+    };
+};
+
 const buildPreviousPageSnapshotWithTiers = (tiersCount) => {
     return {
         tiers: new Array(tiersCount).fill(tierSnapshot),
@@ -168,6 +179,47 @@ describe('page.* events', function () {
                         roles: true
                     }),
                     previous: buildPreviousPageSnapshotWithTiers(2)
+                }
+            });
+    });
+
+    it('page.deleted event is triggered', async function () {
+        const webhookURL = 'https://test-webhook-receiver.com/page-deleted/';
+        await webhookMockReceiver.mock(webhookURL);
+        await fixtureManager.insertWebhook({
+            event: 'page.deleted',
+            url: webhookURL
+        });
+
+        const res = await adminAPIAgent
+            .post('pages/')
+            .body({
+                pages: [{
+                    title: 'testing page.deleted webhook',
+                    status: 'draft',
+                    displayName: 'webhookz'
+                }]
+            })
+            .expectStatus(201);
+
+        const id = res.body.pages[0].id;
+
+        await adminAPIAgent
+            .delete('pages/' + id)
+            .expectStatus(204);
+
+        await webhookMockReceiver.receivedRequest();
+
+        webhookMockReceiver
+            .matchHeaderSnapshot({
+                'content-version': anyContentVersion,
+                'content-length': anyNumber,
+                'user-agent': anyGhostAgent
+            })
+            .matchBodySnapshot({
+                page: {
+                    current: {},
+                    previous: buildPreviousPageSnapshotForDeletedPage()
                 }
             });
     });
